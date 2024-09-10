@@ -1,0 +1,668 @@
+---
+title: "Dados Consolidados de Óbitos no Trânsito Brasileiro - 2023"
+format: 
+  onsvpub-html:
+    echo: false
+    fig-width: 6
+    fig-height: 3.7
+    fig-dpi: 300
+author: 
+  - name: Jorge Tiago Bastos 
+    affiliations : Observatório Nacional de Segurança Viária
+  - name: Pedro Augusto Borges dos Santos
+    affiliations : Observatório Nacional de Segurança Viária
+  - name: Arthur Hideio Noguti
+  - name: João Pedro Melani Saraiva
+date: last-modified
+---
+
+```{r, include=FALSE}
+#| label: setup
+#| include: false
+
+library(tidyverse)
+library(gt)
+library(roadtrafficdeaths)
+library(plotly)
+library(onsvplot)
+
+theme_set(theme_onsv())
+
+
+```  
+
+```{r, include=FALSE}
+library(microdatasus)
+library(readODS)
+
+## data import
+
+ datasus_doext <- fetch_datasus(
+  year_start = 2010,
+  year_end = 2023,
+  information_system = "SIM-DOEXT",
+  vars = c(
+    "CAUSABAS", "CODMUNOCOR", "DTOBITO", "IDADE", "SEXO", "RACACOR", "ESC",
+    "OCUP", "CODMUNRES", "LOCOCOR", "ESTCIV"
+  )
+)
+
+city_list <- read_ods('/home/arthurhideionoguti/ONSV/analise datasus github/Analise-DATASUS-22-23/roadtrafficdeaths-main/data-raw/ibge_lista_municipios.ods', skip = 6)
+
+city_list <- janitor::clean_names(city_list)
+
+## Reference tables
+
+modal_vitima_df <- data.frame(
+  cod_modal = c("V0", "V1", "V2", "V3", "V4", "V5", "V6", "V7", "V8"),
+  modal_vitima = c(
+    "Pedestre", "Bicicleta", "Motocicleta", "Triciclo",
+    "Automóvel", "Automóvel", "Caminhão", "Ônibus", "Outros"
+  )
+)
+
+modal_outro_df <- data.frame(
+  cod_modal_outro = as.character(seq(0, 9, 1)),
+  modal_outro = c(
+    "Pedestre ou animal", "Bicicleta", "Motocicleta ou triciclo",
+    "Automóvel", "Caminhão ou ônibus", "Trem", "Outro veículo não-motorizado",
+    "Objeto fixo ou parado", "Sem colisão", "Não especificado"
+  )
+)
+
+raca_vitima_df <- data.frame(
+  cod_raca = as.character(seq(1, 5, 1)),
+  raca_vitima = c("Branca", "Preta", "Amarela", "Parda", "Indígena")
+)
+
+escolaridade_vitima_df <- data.frame(
+  cod_esc = as.character(seq(1, 5, 1)),
+  escolaridade_vitima = c(
+    "Nenhuma", "de 1 a 3 anos", "de 4 a 7 anos",
+    "de 8 a 11 anos", "12 anos ou mais"
+  )
+)
+
+regiao_df <- data.frame(
+  cod_regiao = as.character(seq(1, 5, 1)),
+  regiao = c("Norte", "Nordeste", "Sudeste", "Sul", "Centro-Oeste")
+)
+
+lococor_df <- data.frame(
+  cod_lococor = as.character(seq(1, 5, 1)),
+  local_ocor = c("hospital", "saude", "domicilio", "via", "outros")
+)
+
+estciv_df <- data.frame(
+  cod_estciv = as.character(seq(1, 5, 1)),
+  estado_civil_vitima = c("solteiro", "casado", "viuvo", "separado", "uniao")
+)
+
+## Main table
+datasus_doext$cod_modal_vitima <- substr(datasus_doext$CAUSABAS, 1, 2)
+datasus_road <- subset(
+  datasus_doext,
+  cod_modal_vitima %in% modal_vitima_df$cod_modal
+)
+
+datasus_road$cid <- datasus_road$CAUSABAS
+
+datasus_road$cod_modal_outro <- substr(datasus_road$CAUSABAS, 3, 3)
+
+datasus_road <- merge(
+  x = datasus_road,
+  y = modal_vitima_df,
+  by.x = "cod_modal_vitima",
+  by.y = "cod_modal",
+  all.x = TRUE
+)
+
+datasus_road <- merge(
+  x = datasus_road,
+  y = modal_outro_df,
+  by = "cod_modal_outro",
+  all.x = TRUE
+)
+
+datasus_road$data_ocorrencia <- lubridate::dmy(datasus_road$DTOBITO)
+datasus_road$ano_ocorrencia <- lubridate::year(datasus_road$data_ocorrencia)
+
+datasus_road$idade_vitima <- ifelse(
+  substr(datasus_road$IDADE, 1, 1) == "4",
+  as.numeric(substr(datasus_road$IDADE, 2, 3)),
+  ifelse(
+    substr(datasus_road$IDADE, 1, 1) %in% c("0", "1", "2", "3"),
+    0,
+    ifelse(
+      substr(datasus_road$IDADE, 1, 1) == "5",
+      as.numeric(paste0("1", substr(datasus_road$IDADE, 2, 3))),
+      NA
+    )
+  )
+)
+
+datasus_road$faixa_etaria_vitima <- cut(
+  datasus_road$idade_vitima,
+  breaks = c(
+    0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 100
+  ),
+  labels = c(
+    "0 a 4 anos", "5 a 9 anos", "10 a 14 anos", "15 a 19 anos",
+    "20 a 24 anos", "25 a 29 anos", "30 a 34 anos",
+    "35 a 39 anos", "40 a 44 anos", "45 a 49 anos",
+    "50 a 54 anos", "55 a 59 anos", "60 a 64 anos",
+    "65 a 69 anos", "70 a 74 anos", "75 a 79 anos",
+    "Mais de 80 anos"
+  ),
+  include.lowest = TRUE,
+  right = FALSE
+)
+
+datasus_road$sexo_vitima <- ifelse(
+  datasus_road$SEXO == "1",
+  "Masculino",
+  ifelse(
+    datasus_road$SEXO == "2",
+    "Feminino",
+    NA
+  )
+)
+
+datasus_road <- merge(
+  x = datasus_road,
+  y = raca_vitima_df,
+  by.x = "RACACOR",
+  by.y = "cod_raca",
+  all.x = TRUE
+)
+
+datasus_road <- merge(
+  x = datasus_road,
+  y = escolaridade_vitima_df,
+  by.x = "ESC",
+  by.y = "cod_esc",
+  all.x = TRUE
+)
+
+datasus_road$cod_municipio_ocor <- substr(
+  as.character(datasus_road$CODMUNOCOR), 1, 6
+)
+
+datasus_road$cod_municipio_res <- substr(
+  as.character(datasus_road$CODMUNRES), 1, 6
+)
+
+datasus_road$cod_regiao_ocor <- substr(datasus_road$cod_municipio_ocor, 1, 1)
+datasus_road$cod_regiao_res <- substr(datasus_road$cod_municipio_res, 1, 1)
+
+datasus_road <- merge(
+  x = datasus_road,
+  y = regiao_df,
+  by.x = "cod_regiao_res",
+  by.y = "cod_regiao"
+)
+
+datasus_road$nome_regiao_res <- datasus_road$regiao
+datasus_road$regiao <- NULL
+
+datasus_road <- merge(
+  x = datasus_road,
+  y = regiao_df,
+  by.x = "cod_regiao_ocor",
+  by.y = "cod_regiao"
+)
+
+datasus_road$nome_regiao_ocor <- datasus_road$regiao
+datasus_road$regiao <- NULL
+
+datasus_road$ocup_cbo_vitima <- as.character(datasus_road$OCUP)
+
+datasus_road <- merge(
+  x = datasus_road,
+  y = lococor_df,
+  by.x = "LOCOCOR",
+  by.y = "cod_lococor",
+  all.x = TRUE
+)
+
+datasus_road <- merge(
+  x = datasus_road,
+  y = estciv_df,
+  by.x = "ESTCIV",
+  by.y = "cod_estciv",
+  all.x = TRUE
+)
+
+datasus_road <- subset(datasus_road, select = c(
+  cid, cod_modal_vitima, modal_vitima, cod_modal_outro, modal_outro,
+  data_ocorrencia, ano_ocorrencia, idade_vitima,
+  faixa_etaria_vitima, sexo_vitima, escolaridade_vitima, raca_vitima,
+  ocup_cbo_vitima, estado_civil_vitima, local_ocor, cod_municipio_ocor, 
+  nome_regiao_ocor, cod_municipio_res, nome_regiao_res
+))
+
+city_list$cod_municipio <- substr(
+  as.character(city_list$codigo_municipio_completo), 1, 6
+)
+
+city_list <- subset(
+  city_list,
+  select = c(cod_municipio, nome_uf, nome_municipio)
+)
+
+## Join datasets
+
+
+rtdeaths <- datasus_road |>
+  dplyr::left_join(city_list, by = c("cod_municipio_ocor" = "cod_municipio")) |>
+  dplyr::rename(nome_municipio_ocor = nome_municipio, nome_uf_ocor = nome_uf) |>
+  dplyr::left_join(city_list, by = c("cod_municipio_res" = "cod_municipio")) |>
+  dplyr::rename(nome_municipio_res = nome_municipio, nome_uf_res = nome_uf)
+
+rtdeaths_tbl <- as_tibble(rtdeaths)
+```
+
+
+# Introdução
+
+Em Agosto de 2024 o Ministério da Saúde disponibilizou a base de dados consolidada do Sistema de Informações de Mortes (SIM) para o ano de 2023. Assim, o presente documento apresenta uma análise dos óbitos no trânsito no Brasil, com foco na evolução desse cenário entre 2022 e 2023. Os cálculos dos resultados apresentados aqui podem ser consultados no repositório do Observatório **MUDAR ESSA INFO**: [github.com/ONSV/analise-datasus-2022](https://github.com/ONSV/analise-datasus-2022){target="_blank"}
+
+# Cenário brasileiro
+
+A quantidade de óbitos anuais no trânsito brasileiro reduziu, porém com uma quantidade bem pequena. Em 2023, o Brasil apresentou um número de **33.743** óbitos no trânsito, uma **redução de 151 óbitos** em comparação com os dados de 2022, o que representa uma variação percentual de **-0,45%**. Os gráficos a seguir apresentam a quantidade absoluta de óbitos por ano no Brasil e a variação percetual entre os anos.
+
+```{r}
+
+mortes_ano_decada <- rtdeaths_tbl |> 
+  count(ano_ocorrencia) |> 
+  drop_na() |> 
+  mutate(var = (n - lag(n)) / lag(n)) |>
+  filter(ano_ocorrencia > 2010) |> 
+  mutate(ano_ocorrencia = as.character(ano_ocorrencia))
+
+plot_anual_abs <- ggplot(mortes_ano_decada, aes(x = ano_ocorrencia, y = n)) +
+  geom_col(fill = onsv_palette$blue) +
+  labs(x = NULL, y = NULL) +
+  theme_onsv() +
+  theme(
+    base_size = 10,
+    panel.grid.minor.y = element_blank(),
+    panel.grid.major.x = element_blank())+
+  geom_text(aes(label = n), nudge_y = -1200, size = 3, color = "white")
+
+p1 <- ggplotly(plot_anual_abs, tooltip = NULL)
+p1
+```
+
+```{r}
+
+plot_anual_var <- mortes_ano_decada |>
+  mutate(var_signal = if_else(var > 0, "up", "down")) |> 
+  ggplot(aes(x = ano_ocorrencia, y = var, color = var_signal)) +
+  geom_segment(
+    aes(x = ano_ocorrencia, xend = ano_ocorrencia, y = 0, yend = var)
+  ) +
+  geom_point(pch = 21, fill = "white", size = 1.5) +
+  scale_color_manual(
+    values = c("down" = onsv_palette$green, "up" = onsv_palette$red)
+  ) +
+  scale_y_continuous(limits = c(-0.12, 0.12), labels = scales::percent) +
+  theme_onsv() +
+  theme(
+    base_size = 10,
+    panel.grid.minor.y = element_blank(),
+    legend.position = "none"
+  ) +
+  geom_text(
+    aes(
+      label = scales::percent(var, accuracy = 0.01, decimal.mark = ",")
+    ), 
+    nudge_x = -0.38, 
+    size = 3
+  ) +
+  labs(x = NULL, y = NULL)
+
+p2 <- ggplotly(plot_anual_var, tooltip = NULL)
+p2
+```
+
+# Óbitos por regiões
+
+Considerando as macroregiões do Brasil, o **Nordeste** apresentou o **maior aumento percentual** de óbitos no trânsito, atingindo **5,54%**. Em ordem decrescente, segue a Região **Centro-Oeste** com uma redução de **-0,55%**, Região **Norte** com **-1,54%**, Região **Sudeste** com redução de **-2,01%** e a Região **Sul** apresentou uma redução nos números de óbitos no trânsito, com uma variação de **-6,83%.**
+
+```{r}
+var_regiao <- rtdeaths_tbl |> 
+  count(ano_ocorrencia, nome_regiao_ocor) |> 
+  filter(ano_ocorrencia > 2021) |> 
+  pivot_wider(
+    names_from = ano_ocorrencia, 
+    values_from = n, 
+    names_prefix = "ano_"
+  ) |> 
+  mutate(var = ano_2023 - ano_2022, var_perc = var / ano_2022)
+
+gt_regiao <- var_regiao |> 
+  arrange(-var_perc) |>
+  gt(rowname_col = "nome_regiao_ocor") |> 
+  fmt_number(
+    columns = ano_2022:var,
+    sep_mark = ".",
+    dec_mark = ",",
+    decimals = 0
+  ) |> 
+  fmt_percent(
+    columns = var_perc,
+    sep_mark = ".",
+    dec_mark = ",",
+    decimals = 2
+  ) |> 
+  data_color(
+    columns = var_perc,
+    palette = "RdBu",
+    domain = c(-0.15, 0.15),
+    reverse = T
+  ) |> 
+  cols_label(
+    var = "Variação",
+    var_perc = "Variação percentual",
+    ano_2022 = "2022",
+    ano_2023 = "2023"
+  )
+
+gt_regiao
+```
+
+# Óbitos por unidades da federação
+
+Em relação aos óbitos no trânsito por unidades da federação, os locais que apresentaram os **maiores aumentos percentuais** na quantidade de óbitos entre 2022 e 2023 foram:
+
+-   Bahia: 13%;
+-   Piauí: 12%;
+-   Sergipe: 9%.
+
+Por outro lado, as unidades que mais apresentaram **reduções** na quantidade de óbitos no trânsito foram:
+
+-   Amapá: -25%;
+-   Distrito Federal: -18%;
+-   Rio de Janeiro: -16%
+
+```{r}
+
+#| column: page
+#| fig-width: 9
+
+mortes_uf <- rtdeaths_tbl |> 
+  count(ano_ocorrencia, nome_uf_ocor) |> 
+  filter(ano_ocorrencia > 2021)
+
+var_uf <- mortes_uf |> 
+  pivot_wider(
+    names_from = ano_ocorrencia,
+    values_from = n,
+    names_prefix = "ano_"
+  ) |> 
+  drop_na() |> 
+  mutate(
+    var = ano_2023 - ano_2022, 
+    var_perc = var / ano_2022,
+    nome_uf_ocor = fct_reorder(nome_uf_ocor, var_perc),
+    signal = if_else(var_perc > 0, "up", "down"),
+    text_2022 = glue::glue("{nome_uf_ocor} (2022): {ano_2022}"),
+    text_2023 = glue::glue("{nome_uf_ocor} (2023): {ano_2023}"),
+    text_var = glue::glue(
+      "{nome_uf_ocor}: {scales::percent(var_perc, accuracy = 0.01, decimal.mark = ',')}"
+    )
+  )
+
+p1 <- ggplot(var_uf, aes(x = nome_uf_ocor, y = ano_2022)) +
+  geom_col(fill = onsv_palette$blue, aes(text = text_2022)) +
+  coord_flip() + 
+  theme_onsv() +
+  theme(
+    base_size = 10,
+    panel.grid.minor.x = element_blank(),
+    panel.grid.major.y = element_blank()
+  ) +
+  labs(x = NULL, y = NULL) +
+  scale_y_continuous(limits = c(0, 5300))
+
+p2 <- ggplot(var_uf, aes(x = nome_uf_ocor, y = ano_2023)) +
+  geom_col(fill = onsv_palette$blue, aes(text = text_2023)) +
+  coord_flip() + 
+  theme_onsv() +
+  theme(
+    base_size = 10,
+    panel.grid.minor.x = element_blank(),
+    panel.grid.major.y = element_blank(),
+    axis.text.y = element_blank()
+  ) +
+  labs(x = NULL, y = NULL) +
+  scale_y_continuous(limits = c(0, 5300))
+
+p3 <- ggplot(var_uf, aes(x = nome_uf_ocor, y = var_perc, fill = signal)) +
+  geom_col(aes(text = text_var)) +
+  coord_flip() + 
+  theme_onsv() +
+  theme(
+    base_size = 10,
+    panel.grid.minor.x = element_blank(),
+    panel.grid.major.y = element_blank(),
+    axis.text.y = element_blank(),
+    legend.position = "none"
+  ) +
+  labs(x = NULL, y = NULL) +
+  scale_y_continuous(
+    limits = c(-0.25, 0.25),
+    labels = scales::percent
+  ) +
+  scale_fill_manual(
+    values = c("up" = onsv_palette$red, "down" = onsv_palette$green)
+  )
+
+subplot(
+  ggplotly(p1, tooltip = "text"),
+  ggplotly(p2, tooltip = "text"),
+  ggplotly(p3, tooltip = "text")
+) |> 
+  layout(
+    annotations = list(
+      list(
+        x = 0.15,  
+        y = 1,  
+        text = "2022",  
+        xref = "paper",  
+        yref = "paper",  
+        xanchor = "center",  
+        yanchor = "bottom",  
+        showarrow = FALSE 
+      ),
+      list(
+        x = 0.5,  
+        y = 1,  
+        text = "2023",  
+        xref = "paper",  
+        yref = "paper",  
+        xanchor = "center",  
+        yanchor = "bottom",  
+        showarrow = FALSE 
+      ),
+      list(
+        x = 0.85,  
+        y = 1,  
+        text = "Variação percentual",  
+        xref = "paper",  
+        yref = "paper",  
+        xanchor = "center",  
+        yanchor = "bottom",  
+        showarrow = FALSE
+      )
+    )
+  )
+```
+
+# Óbitos por modal das vítimas
+
+Considerando o modo de transporte em que a vítima se encontrava durante o sinistro, os modais com **maiores aumentos percentuais entre** 2022 e 2023 foram os modais:
+
+-   Triciclo: 28,12%;
+-   Motocicleta: 6,73%;
+-   Bicicleta: 4,75%;
+
+Os modais que apresentaram reduções foram:
+
+-   Ônibus: -23,81%;
+-   Outros: -9,67%;
+-   Automóvel: -4,22%;
+-   Caminhão (ocupantes de transporte pesado): -1,74%;
+-   Pedestre: -0,67%
+
+
+```{r}
+obitos_modais <- rtdeaths_tbl |> 
+  count(ano_ocorrencia, modal_vitima) |> 
+  filter(ano_ocorrencia > 2021) |> 
+  pivot_wider(
+    names_from = ano_ocorrencia,
+    values_from = n,
+    names_prefix = "ano_"
+  ) |> 
+  mutate(
+    var = ano_2023 - ano_2022,
+    var_perc = var / ano_2022
+  )
+
+gt_modais <- obitos_modais |>
+  arrange(-var_perc) |> 
+  gt(rowname_col = "modal_vitima") |> 
+  fmt_number(
+    columns = ano_2022:var,
+    sep_mark = ".",
+    dec_mark = ",",
+    decimals = 0
+  ) |> 
+  fmt_percent(
+    columns = var_perc,
+    sep_mark = ".",
+    dec_mark = ",",
+    decimals = 2
+  ) |> 
+  data_color(
+    columns = var_perc,
+    palette = "RdBu",
+    domain = c(-0.2, 0.2),
+    reverse = T
+  ) |> 
+  cols_label(
+    ano_2022 = "2022",
+    ano_2023 = "2023",
+    var = "Variação",
+    var_perc = "Variação percentual"
+  )
+
+gt_modais
+```
+
+# Pirâmide etária das vítimas
+
+Por fim, considerando o sexo das vítimas, em 2023 as vítimas do sexo masculino ainda são a maioria dos mortos no trânsito, representando **83%** dos óbitos. A faixa etária com a maior quantidade de mortes no trânsito, em 2023, ainda é a de 20 a 24 anos.
+
+Considerando apenas as vítimas fatais do sexo feminino, a faixa etária com um maior aumento de mortes entre 2022 e 2023 foi a acima de 65 a 69 anos, com uma variação de **22,18%.** A faixa etária com a maior redução foi a de 70 a 74 anos, atingindo uma variação de **-10,95%.**
+
+Considerando as vítimas fatais do sexo masculino, a faixa etária com o maior aumento de mortes entre 2022 e 2023 foi a entre 0 a 4 anos, com uma variação de **15,11%**. A faixa etária com a maior redução foi a de 5 a 9 anos, com uma variação de **-4,96%**.
+
+```{r}
+obitos_piramide <- rtdeaths_tbl |> 
+  count(ano_ocorrencia, sexo_vitima, faixa_etaria_vitima) |> 
+  filter(ano_ocorrencia > 2021) |> 
+  drop_na()
+
+tbl_piramide <- obitos_piramide |> 
+  pivot_wider(
+    names_from = c(sexo_vitima, ano_ocorrencia),
+    values_from = n,
+    names_sep = "_"
+  ) |> 
+  mutate(
+    var_fem = (Feminino_2023 - Feminino_2022) / Feminino_2022,
+    var_masc = (Masculino_2023 - Masculino_2022) / Masculino_2022
+  ) |> 
+  arrange(desc(faixa_etaria_vitima))
+
+gt_piramide <- tbl_piramide |>
+  gt(rowname_col = "faixa_etaria_vitima") |> 
+  fmt_number(
+    columns = Feminino_2022:Masculino_2023,
+    sep_mark = ".",
+    dec_mark = ",",
+    decimals = 0
+  ) |> 
+  fmt_percent(
+    columns = var_fem:var_masc,
+    sep_mark = ".",
+    dec_mark = ",",
+    decimals = 2
+  ) |> 
+  data_color(
+    columns = var_fem:var_masc,
+    palette = "RdBu",
+    domain = c(-0.5, 0.5),
+    reverse = T
+  ) |>
+  tab_spanner(
+    label = "2022",
+    columns = Feminino_2022:Masculino_2022
+  ) |> 
+  tab_spanner(
+    label = "2023",
+    columns = Feminino_2023:Masculino_2023
+  ) |> 
+  tab_spanner(
+    label = "Variação percentual",
+    columns = var_fem:var_masc
+  ) |> 
+  cols_label(
+    Feminino_2022 = "Feminino",
+    Masculino_2022 = "Masculino",
+    Feminino_2023 = "Feminino",
+    Masculino_2023 = "Masculino",
+    var_fem = "Feminino",
+    var_masc = "Masculino"
+  )
+
+gt_piramide
+```
+
+# Faixa etária e modais da vítimas
+
+Observando os óbitos com base no modal e na faixa etária das vítimas, de forma conjunta, percebe-se que a grande maioria dos óbitos ocorrem entre os ocupantes de motocicleta entre 20 e 24 anos.
+
+```{r}
+tbl_faixas_modais <- rtdeaths_tbl |> 
+  filter(ano_ocorrencia == 2023) |> 
+  count(modal_vitima, faixa_etaria_vitima, .drop = FALSE) |> 
+  drop_na() |> 
+  mutate(
+    tooltip_text = glue::glue("{modal_vitima} - {faixa_etaria_vitima}: {n}")
+  )
+
+plot_faixas_modais <- tbl_faixas_modais |> 
+  ggplot(aes(x = faixa_etaria_vitima, y = modal_vitima, fill = n)) +
+  geom_tile(aes(text = tooltip_text)) +
+  theme_onsv() +
+  theme(
+    base_size = 8,
+    panel.grid = element_blank(),
+    legend.position = "none"
+  ) +
+  labs(x = "Faixa etária", y = NULL) +
+  scale_x_discrete(
+    labels = c(
+      "0-4", "5-9", "10-14", "15-19", "20-24", "25-29", "30-34", "35-39", "40-44", "45-49", "50-54", "55-59", "60-64", "65-69", "70-74", "75-79", "80+"
+    )
+  ) +
+  scale_fill_distiller(palette = "Blues", direction = 1) +
+  coord_fixed() +
+  geom_text(aes(label = n), size = 3, color = "grey10")
+
+ggplotly(plot_faixas_modais, tooltip = "text")
+```
