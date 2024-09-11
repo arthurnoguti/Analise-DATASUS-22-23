@@ -8,11 +8,13 @@ format:
     fig-dpi: 300
 author: 
   - name: Jorge Tiago Bastos 
-    affiliations : Observatório Nacional de Segurança Viária
+    affiliations : Universidade Federal do Paraná
   - name: Pedro Augusto Borges dos Santos
     affiliations : Observatório Nacional de Segurança Viária
   - name: Arthur Hideio Noguti
+    affiliations : Observatório Nacional de Segurança Viária
   - name: João Pedro Melani Saraiva
+    affiliations : Observatório Nacional de Segurança Viária
 date: last-modified
 ---
 
@@ -265,7 +267,7 @@ rtdeaths_tbl <- as_tibble(rtdeaths)
 
 # Introdução
 
-Em Agosto de 2024 o Ministério da Saúde disponibilizou a base de dados consolidada do Sistema de Informações de Mortes (SIM) para o ano de 2023. Assim, o presente documento apresenta uma análise dos óbitos no trânsito no Brasil, com foco na evolução desse cenário entre 2022 e 2023. Os cálculos dos resultados apresentados aqui podem ser consultados no repositório do Observatório **MUDAR ESSA INFO**: [github.com/ONSV/analise-datasus-2022](https://github.com/ONSV/analise-datasus-2022){target="_blank"}
+Em Agosto de 2024 o Ministério da Saúde disponibilizou a base de dados consolidada do Sistema de Informações de Mortes (SIM) para o ano de 2023. Assim, o presente documento apresenta uma análise dos óbitos no trânsito no Brasil, com foco na evolução desse cenário entre 2022 e 2023.  
 
 # Cenário brasileiro
 
